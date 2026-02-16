@@ -1,0 +1,23 @@
+
+> dashboard@0.1.0 dev
+> next dev
+
+⚠ Warning: Next.js inferred your workspace root, but it may not be correct.
+ We detected multiple lockfiles and selected the directory of /home/anwar/package-lock.json as the root directory.
+ To silence this warning, set `turbopack.root` in your Next.js config, or consider removing one of the lockfiles if it's not needed.
+   See https://nextjs.org/docs/app/api-reference/config/next-config-js/turbopack#root-directory for more information.
+ Detected additional lockfiles: 
+   * /home/anwar/4th_semester/Data_Base_project/UI/package-lock.json
+
+▲ Next.js 16.1.6 (Turbopack)
+- Local:         http://localhost:3000
+- Network:       http://172.20.10.3:3000
+
+✓ Starting...
+✓ Ready in 795ms
+ GET / 307 in 520ms (compile: 287ms, render: 234ms)
+○ Compiling /dashboard ...
+ GET / 307 in 181ms (compile: 9ms, render: 172ms)
+ GET / 307 in 60ms (compile: 3ms, render: 57ms)
+ GET /dashboard/ai-query 200 in 244ms (compile: 68ms, render: 176ms)
+ GET / 307 in 75ms (compile: 4ms, render: 71ms)
