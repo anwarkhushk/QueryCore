@@ -23,7 +23,7 @@ const navigation = [
     { name: "Products", href: "/dashboard/products", icon: Package },
     { name: "Orders", href: "/dashboard/orders", icon: ShoppingCart },
     { name: "AI Query", href: "/dashboard/ai-query", icon: Bot },
-    { name: "System Backup", href: "/dashboard/backup", icon: Database },
+    // { name: "System Backup", href: "/dashboard/backup", icon: Database },
     { name: "Report Error", href: "/dashboard/report-error", icon: AlertTriangle },
 ];
 

@@ -1,290 +1,296 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
-import { Send, Terminal, Sparkles, Loader2, Clock, Table2, Code2 } from "lucide-react";
-import api from "@/lib/axios";
+import { useState } from "react";
+import {
+    Sparkles,
+    Loader2,
+    Terminal,
+    ShieldCheck,
+    Send,
+    Copy,
+    Check,
+    AlertCircle,
+    Database,
+    Zap,
+} from "lucide-react";
 
-interface QueryResult {
-    sql: string;
-    columns: string[];
-    results: any[];
+/* ── Types ─────────────────────────────────────────────────────────── */
+interface ApiResponse {
+    status: string;
+    original_question: string;
+    raw_llm_sql: string;
+    secure_sql_to_execute: string;
 }
 
-const TABLE_SUGGESTIONS = [
-    { label: "customers", description: "Customer data", category: "table" },
-    { label: "products", description: "Product catalog", category: "table" },
-    { label: "orders", description: "Order history", category: "table" },
-    { label: "monthly_stats", description: "Revenue stats", category: "table" },
+/* ── Example prompts for the suggestion chips ──────────────────────── */
+const EXAMPLES = [
+    "Show me all users in the system",
+    "Get the latest 10 analytics reports",
+    "Count query executions by tenant",
+    "Find users with gmail emails",
 ];
 
-const SQL_SUGGESTIONS = [
-    { label: "Show me top customers by spend", description: "Top spenders", category: "query" },
-    { label: "What is the total revenue?", description: "Revenue analysis", category: "query" },
-    { label: "Show me all processing orders", description: "Order status", category: "query" },
-    { label: "List all active customers", description: "Customer filter", category: "query" },
-    { label: "Show me the revenue trend", description: "Monthly revenue", category: "query" },
-    { label: "Which products have low stock?", description: "Inventory check", category: "query" },
-];
+/* ── Clipboard copy helper ─────────────────────────────────────────── */
+function CopyButton({ text }: { text: string }) {
+    const [copied, setCopied] = useState(false);
 
-function getRecentQueries(): { label: string; description: string; category: string }[] {
-    try {
-        const stored = localStorage.getItem("recentQueries");
-        if (!stored) return [];
-        const queries = JSON.parse(stored) as string[];
-        return queries.map(q => ({ label: q, description: "Recent query", category: "recent" }));
-    } catch {
-        return [];
-    }
-}
-
-function saveRecentQuery(query: string) {
-    try {
-        const stored = localStorage.getItem("recentQueries");
-        let queries: string[] = stored ? JSON.parse(stored) : [];
-        // Remove duplicate if exists
-        queries = queries.filter(q => q !== query);
-        // Add to front
-        queries.unshift(query);
-        // Keep only last 5
-        queries = queries.slice(0, 5);
-        localStorage.setItem("recentQueries", JSON.stringify(queries));
-    } catch {
-        // ignore
-    }
-}
-
-export default function AIQueryPage() {
-    const [query, setQuery] = useState("");
-    const [result, setResult] = useState<QueryResult | null>(null);
-    const [loading, setLoading] = useState(false);
-    const [showSuggestions, setShowSuggestions] = useState(false);
-    const [selectedIndex, setSelectedIndex] = useState(-1);
-    const inputRef = useRef<HTMLTextAreaElement>(null);
-    const suggestionsRef = useRef<HTMLDivElement>(null);
-
-    const getSuggestions = () => {
-        const recent = getRecentQueries();
-        const all = [...recent, ...SQL_SUGGESTIONS, ...TABLE_SUGGESTIONS];
-
-        if (!query.trim()) {
-            // Show recent queries and popular suggestions
-            return [...recent, ...SQL_SUGGESTIONS.slice(0, 3)];
-        }
-
-        const lower = query.toLowerCase();
-        return all.filter(s =>
-            s.label.toLowerCase().includes(lower) &&
-            s.label.toLowerCase() !== lower
-        ).slice(0, 6);
+    const handleCopy = async () => {
+        await navigator.clipboard.writeText(text);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
     };
 
-    const suggestions = getSuggestions();
+    return (
+        <button
+            onClick={handleCopy}
+            className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wider
+                 text-gray-400 hover:text-white transition-colors"
+        >
+            {copied ? (
+                <>
+                    <Check className="h-3.5 w-3.5 text-green-400" /> Copied
+                </>
+            ) : (
+                <>
+                    <Copy className="h-3.5 w-3.5" /> Copy
+                </>
+            )}
+        </button>
+    );
+}
 
-    // Close suggestions when clicking outside
-    useEffect(() => {
-        const handleClickOutside = (e: MouseEvent) => {
-            if (
-                suggestionsRef.current &&
-                !suggestionsRef.current.contains(e.target as Node) &&
-                inputRef.current &&
-                !inputRef.current.contains(e.target as Node)
-            ) {
-                setShowSuggestions(false);
-            }
-        };
-        document.addEventListener("mousedown", handleClickOutside);
-        return () => document.removeEventListener("mousedown", handleClickOutside);
-    }, []);
+/* ── Page ───────────────────────────────────────────────────────────── */
+export default function AIQueryPage() {
+    const [question, setQuestion] = useState("");
+    const [loading, setLoading] = useState(false);
+    const [result, setResult] = useState<ApiResponse | null>(null);
+    const [error, setError] = useState<string | null>(null);
 
-    const handleSearch = async (e: React.FormEvent) => {
-        e.preventDefault();
-        if (!query.trim()) return;
+    /* ── API call ──────────────────────────────────────────────────── */
+    const handleSubmit = async (e?: React.FormEvent) => {
+        e?.preventDefault();
+        const trimmed = question.trim();
+        if (!trimmed) return;
 
         setLoading(true);
         setResult(null);
-        setShowSuggestions(false);
-        saveRecentQuery(query.trim());
+        setError(null);
 
         try {
-            const response = await api.post("/ai-query", { query });
-            setResult(response.data);
-        } catch (error) {
-            console.error("Failed to execute query", error);
+            const res = await fetch("http://127.0.0.1:8000/api/ask-ai", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "tenant-id": "demo-tenant-123",
+                },
+                body: JSON.stringify({ question: trimmed }),
+            });
+
+            if (!res.ok) {
+                throw new Error(`Backend responded with status ${res.status}`);
+            }
+
+            const data: ApiResponse = await res.json();
+
+            if (data.status !== "success") {
+                throw new Error((data as any).error ?? "Unknown backend error");
+            }
+
+            setResult(data);
+        } catch (err: any) {
+            setError(
+                err.message?.includes("Failed to fetch") || err.message?.includes("NetworkError")
+                    ? "Could not reach the backend. Please make sure the Python server is running on port 8000."
+                    : err.message ?? "Something went wrong."
+            );
         } finally {
             setLoading(false);
         }
     };
 
-    const handleSelectSuggestion = (suggestion: string) => {
-        setQuery(suggestion);
-        setShowSuggestions(false);
-        inputRef.current?.focus();
+    const handleChipClick = (text: string) => {
+        setQuestion(text);
     };
 
-    const handleKeyDown = (e: React.KeyboardEvent) => {
-        if (!showSuggestions || suggestions.length === 0) {
-            if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                handleSearch(e);
-            }
-            return;
-        }
-
-        if (e.key === "ArrowDown") {
-            e.preventDefault();
-            setSelectedIndex(prev => Math.min(prev + 1, suggestions.length - 1));
-        } else if (e.key === "ArrowUp") {
-            e.preventDefault();
-            setSelectedIndex(prev => Math.max(prev - 1, -1));
-        } else if (e.key === "Enter" && !e.shiftKey) {
-            e.preventDefault();
-            if (selectedIndex >= 0) {
-                handleSelectSuggestion(suggestions[selectedIndex].label);
-            } else {
-                handleSearch(e);
-            }
-        } else if (e.key === "Escape") {
-            setShowSuggestions(false);
-        }
-    };
-
-    const getCategoryIcon = (category: string) => {
-        switch (category) {
-            case "recent": return <Clock className="h-4 w-4 text-gray-400" />;
-            case "table": return <Table2 className="h-4 w-4 text-blue-400" />;
-            case "query": return <Code2 className="h-4 w-4 text-purple-400" />;
-            default: return null;
-        }
-    };
-
+    /* ── Render ────────────────────────────────────────────────────── */
     return (
-        <div className="space-y-6">
-            <div>
-                <h1 className="text-3xl font-bold tracking-tight text-gray-900 dark:text-white flex items-center">
-                    <Sparkles className="mr-3 h-8 w-8 text-purple-500" />
-                    AI SQL Assistant
-                </h1>
-                <p className="text-gray-500 dark:text-gray-400 mt-2">
-                    Ask questions about your data in plain English.
-                </p>
+        <div className="space-y-8">
+            {/* ── Header ─────────────────────────────────────────────────── */}
+            <div className="relative overflow-hidden rounded-2xl
+                      bg-gradient-to-br from-purple-600 via-violet-600 to-indigo-700
+                      p-8 shadow-xl">
+                {/* decorative blurred circles */}
+                <div className="pointer-events-none absolute -right-12 -top-12 h-56 w-56 rounded-full
+                        bg-white/10 blur-3xl" />
+                <div className="pointer-events-none absolute -bottom-16 -left-16 h-64 w-64 rounded-full
+                        bg-purple-400/20 blur-3xl" />
+
+                <div className="relative z-10 flex items-start gap-4">
+                    <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl
+                          bg-white/15 backdrop-blur-sm ring-1 ring-white/20">
+                        <Sparkles className="h-7 w-7 text-white" />
+                    </div>
+                    <div>
+                        <h1 className="text-2xl font-bold tracking-tight text-white sm:text-3xl">
+                            QueryCore AI
+                            <span className="ml-2 text-base font-normal text-purple-200">
+                                — Multi-Tenant SQL Generator
+                            </span>
+                        </h1>
+                        <p className="mt-1.5 max-w-xl text-sm text-purple-100/80">
+                            Type a question in plain English and let AI generate a safe, tenant-scoped
+                            PostgreSQL query for you.
+                        </p>
+                    </div>
+                </div>
             </div>
 
-            <div className="bg-white dark:bg-gray-900 p-6 rounded-xl shadow-sm border border-gray-200 dark:border-gray-800">
-                <form onSubmit={handleSearch} className="relative">
+            {/* ── Input area ─────────────────────────────────────────────── */}
+            <form
+                onSubmit={handleSubmit}
+                className="rounded-2xl border border-gray-200 bg-white p-6
+                   shadow-sm dark:border-gray-800 dark:bg-gray-900"
+            >
+                <label className="mb-2 block text-sm font-medium text-gray-500 dark:text-gray-400">
+                    Ask a question about your data
+                </label>
+
+                <div className="relative">
                     <textarea
-                        ref={inputRef}
-                        value={query}
-                        onChange={(e) => {
-                            setQuery(e.target.value);
-                            setShowSuggestions(true);
-                            setSelectedIndex(-1);
+                        value={question}
+                        onChange={(e) => setQuestion(e.target.value)}
+                        onKeyDown={(e) => {
+                            if (e.key === "Enter" && !e.shiftKey) {
+                                e.preventDefault();
+                                handleSubmit();
+                            }
                         }}
-                        onFocus={() => setShowSuggestions(true)}
-                        placeholder="e.g., Show me the top 5 customers by spend..."
-                        className="w-full h-32 p-4 pr-12 text-lg rounded-lg border border-gray-300 focus:border-purple-500 focus:outline-none focus:ring-1 focus:ring-purple-500 resize-none dark:bg-gray-800 dark:border-gray-700 dark:text-white"
-                        onKeyDown={handleKeyDown}
+                        disabled={loading}
+                        placeholder="e.g., Show me all users who signed up this week..."
+                        rows={3}
+                        className="w-full resize-none rounded-xl border border-gray-200
+                       bg-gray-50 p-4 pr-14 text-base text-gray-900
+                       placeholder:text-gray-400 focus:border-purple-500
+                       focus:outline-none focus:ring-2 focus:ring-purple-500/20
+                       disabled:opacity-60 dark:border-gray-700 dark:bg-gray-800
+                       dark:text-white dark:placeholder:text-gray-500
+                       dark:focus:border-purple-400"
                     />
+
                     <button
                         type="submit"
-                        disabled={loading || !query.trim()}
-                        className="absolute bottom-4 right-4 p-2 bg-purple-600 text-white rounded-full hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-lg hover:shadow-purple-500/30"
+                        disabled={loading || !question.trim()}
+                        className="absolute bottom-3 right-3 flex h-10 w-10 items-center justify-center
+                       rounded-xl bg-purple-600 text-white shadow-lg shadow-purple-500/30
+                       transition-all hover:bg-purple-700 hover:shadow-purple-500/40
+                       disabled:cursor-not-allowed disabled:opacity-40 disabled:shadow-none"
                     >
-                        {loading ? <Loader2 className="h-5 w-5 animate-spin" /> : <Send className="h-5 w-5" />}
+                        {loading ? (
+                            <Loader2 className="h-5 w-5 animate-spin" />
+                        ) : (
+                            <Send className="h-5 w-5" />
+                        )}
                     </button>
+                </div>
 
-                    {/* Autocomplete Dropdown */}
-                    {showSuggestions && suggestions.length > 0 && (
-                        <div
-                            ref={suggestionsRef}
-                            className="absolute z-10 left-0 right-0 top-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg overflow-hidden"
+                {/* ── Suggestion chips ────────────────────────────────────── */}
+                <div className="mt-4 flex flex-wrap gap-2">
+                    {EXAMPLES.map((ex) => (
+                        <button
+                            key={ex}
+                            type="button"
+                            onClick={() => handleChipClick(ex)}
+                            className="rounded-full border border-gray-200 bg-gray-50 px-3.5 py-1.5
+                         text-xs font-medium text-gray-600 transition-all
+                         hover:border-purple-300 hover:bg-purple-50 hover:text-purple-700
+                         dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300
+                         dark:hover:border-purple-500 dark:hover:bg-purple-900/30
+                         dark:hover:text-purple-300"
                         >
-                            {suggestions.map((suggestion, index) => (
-                                <button
-                                    key={`${suggestion.category}-${suggestion.label}`}
-                                    type="button"
-                                    onClick={() => handleSelectSuggestion(suggestion.label)}
-                                    className={`w-full flex items-center gap-3 px-4 py-2.5 text-left text-sm transition-colors ${index === selectedIndex
-                                            ? "bg-purple-50 dark:bg-purple-900/20 text-purple-700 dark:text-purple-300"
-                                            : "text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50"
-                                        }`}
-                                >
-                                    {getCategoryIcon(suggestion.category)}
-                                    <span className="flex-1 truncate">{suggestion.label}</span>
-                                    <span className="text-xs text-gray-400 dark:text-gray-500">{suggestion.description}</span>
-                                </button>
-                            ))}
-                        </div>
-                    )}
-                </form>
-            </div>
+                            <Zap className="mr-1 inline h-3 w-3" />
+                            {ex}
+                        </button>
+                    ))}
+                </div>
+            </form>
 
+            {/* ── Loading skeleton ───────────────────────────────────────── */}
+            {loading && (
+                <div className="space-y-4 animate-pulse">
+                    <div className="h-44 rounded-2xl bg-gray-200 dark:bg-gray-800" />
+                    <div className="h-52 rounded-2xl bg-gray-200 dark:bg-gray-800" />
+                </div>
+            )}
+
+            {/* ── Error toast ────────────────────────────────────────────── */}
+            {error && (
+                <div className="flex items-start gap-3 rounded-2xl border border-red-200
+                        bg-red-50 p-5 text-sm text-red-800
+                        dark:border-red-800/50 dark:bg-red-900/20 dark:text-red-300">
+                    <AlertCircle className="mt-0.5 h-5 w-5 shrink-0" />
+                    <div>
+                        <p className="font-semibold">Request Failed</p>
+                        <p className="mt-1">{error}</p>
+                    </div>
+                </div>
+            )}
+
+            {/* ── Results ────────────────────────────────────────────────── */}
             {result && (
-                <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                    {/* SQL Block */}
-                    <div className="overflow-hidden rounded-xl border border-gray-200 dark:border-gray-800 bg-gray-900 shadow-sm">
-                        <div className="flex items-center justify-between px-4 py-3 bg-gray-950 border-b border-gray-800">
-                            <div className="flex items-center text-gray-400">
-                                <Terminal className="mr-2 h-4 w-4" />
-                                <span className="text-sm font-mono">Generated SQL</span>
+                <div className="space-y-5">
+                    {/* Question echo */}
+                    <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
+                        <Database className="h-4 w-4" />
+                        <span>
+                            Showing results for:{" "}
+                            <span className="font-medium text-gray-900 dark:text-white">
+                                &ldquo;{result.original_question}&rdquo;
+                            </span>
+                        </span>
+                    </div>
+
+                    {/* ── Card 1: Raw AI SQL ──────────────────────────────────── */}
+                    <div className="overflow-hidden rounded-2xl border border-gray-800
+                          bg-gray-950 shadow-lg">
+                        <div className="flex items-center justify-between border-b border-gray-800
+                            bg-gray-900/80 px-5 py-3">
+                            <div className="flex items-center gap-2 text-gray-300">
+                                <Terminal className="h-4 w-4 text-purple-400" />
+                                <span className="text-sm font-semibold tracking-wide">
+                                    Raw AI Output
+                                </span>
                             </div>
-                            <button
-                                onClick={() => navigator.clipboard.writeText(result.sql)}
-                                className="text-xs text-gray-500 hover:text-gray-300 uppercase tracking-wider font-semibold"
-                            >
-                                Copy
-                            </button>
+                            <CopyButton text={result.raw_llm_sql} />
                         </div>
-                        <div className="p-4 overflow-x-auto">
-                            <pre className="text-sm font-mono text-green-400">
-                                <code>{result.sql}</code>
+                        <div className="overflow-x-auto p-5">
+                            <pre className="text-sm leading-relaxed text-emerald-400 font-mono whitespace-pre-wrap">
+                                <code>{result.raw_llm_sql}</code>
                             </pre>
                         </div>
                     </div>
 
-                    {/* Results Table */}
-                    <div className="rounded-xl border border-gray-200 bg-white overflow-hidden shadow-sm dark:border-gray-800 dark:bg-gray-900">
-                        <div className="p-4 border-b border-gray-200 dark:border-gray-800">
-                            <h3 className="font-semibold text-gray-900 dark:text-white">Query Results</h3>
+                    {/* ── Card 2: Secure tenant-scoped SQL ────────────────────── */}
+                    <div className="overflow-hidden rounded-2xl border border-emerald-700/40
+                          bg-gray-950 shadow-lg ring-1 ring-emerald-500/10">
+                        <div className="flex items-center justify-between border-b border-emerald-800/40
+                            bg-emerald-950/60 px-5 py-3">
+                            <div className="flex items-center gap-2">
+                                <ShieldCheck className="h-4 w-4 text-emerald-400" />
+                                <span className="text-sm font-semibold tracking-wide text-emerald-200">
+                                    Secure Multi-Tenant Query
+                                </span>
+                                <span className="ml-1 rounded-full bg-emerald-500/20 px-2.5 py-0.5 text-[10px]
+                                 font-bold uppercase tracking-widest text-emerald-400
+                                 ring-1 ring-emerald-500/30">
+                                    Tenant-Scoped
+                                </span>
+                            </div>
+                            <CopyButton text={result.secure_sql_to_execute} />
                         </div>
-                        <div className="overflow-x-auto">
-                            <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-800">
-                                <thead className="bg-gray-50 dark:bg-gray-800/50">
-                                    <tr>
-                                        {result.columns.map((col) => (
-                                            <th
-                                                key={col}
-                                                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider dark:text-gray-400"
-                                            >
-                                                {col}
-                                            </th>
-                                        ))}
-                                    </tr>
-                                </thead>
-                                <tbody className="bg-white divide-y divide-gray-200 dark:bg-gray-900 dark:divide-gray-800">
-                                    {result.results.length === 0 ? (
-                                        <tr>
-                                            <td colSpan={result.columns.length} className="px-6 py-4 text-center text-sm text-gray-500">
-                                                No results found
-                                            </td>
-                                        </tr>
-                                    ) : (
-                                        result.results.map((row, i) => (
-                                            <tr key={i} className="hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors">
-                                                {result.columns.map((col) => (
-                                                    <td
-                                                        key={`${i}-${col}`}
-                                                        className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-200"
-                                                    >
-                                                        {typeof row[col] === 'number' && (col.includes('price') || col.includes('revenue') || col.includes('total') || col.includes('spend'))
-                                                            ? `$${row[col].toLocaleString()}`
-                                                            : row[col]}
-                                                    </td>
-                                                ))}
-                                            </tr>
-                                        ))
-                                    )}
-                                </tbody>
-                            </table>
+                        <div className="overflow-x-auto p-5">
+                            <pre className="text-sm leading-relaxed text-sky-300 font-mono whitespace-pre-wrap">
+                                <code>{result.secure_sql_to_execute}</code>
+                            </pre>
                         </div>
                     </div>
                 </div>

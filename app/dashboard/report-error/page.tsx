@@ -9,27 +9,38 @@ export default function ReportErrorPage() {
     const [loading, setLoading] = useState(false);
     const [success, setSuccess] = useState(false);
 
-    const handleSubmit = async (e: React.FormEvent) => {
-        e.preventDefault();
-        if (!message.trim()) return;
+    const handleSendReport = async () => {
+        // 'message' wahi variable hona chahiye jo aapne textarea ke liye use kiya hai
+        if (!message) {
+            alert("Please describe the issue first!");
+            return;
+        }
 
-        setLoading(true);
         try {
-            // Get current user info from token or local storage if available
-            // For now, we'll mock it or assume it's the logged-in user
-            // In a real app, we'd decode the JWT
-            await api.post("/report-error", {
-                message,
-                reporterEmail: "current.user@example.com", // This would ideally come from auth context
-                reporterName: "Current User" // This would ideally come from auth context
+            const response = await fetch("/api/report-error", { // Path ab folder se match kar raha hai
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                    message: message,
+                    reporterEmail: "muhammadanwarbaloch1@gmail.com",
+                    reporterName: "Anwar Baloch"
+                }),
             });
-            setSuccess(true);
-            setMessage("");
-            setTimeout(() => setSuccess(false), 3000);
+
+            const result = await response.json();
+
+            if (response.ok) {
+                alert("Success! The report has been sent to the admins.");
+                // Agar aapke pas setMessage state hai toh box ko khali karne ke liye:
+                // setMessage(""); 
+            } else {
+                alert("Error: " + result.message);
+            }
         } catch (error) {
-            console.error("Failed to send report", error);
-        } finally {
-            setLoading(false);
+            console.error("Frontend Error:", error);
+            alert("Could not connect to the server.");
         }
     };
 
@@ -46,7 +57,7 @@ export default function ReportErrorPage() {
             </div>
 
             <div className="bg-white dark:bg-gray-900 p-6 rounded-xl shadow-sm border border-gray-200 dark:border-gray-800">
-                <form onSubmit={handleSubmit} className="space-y-4">
+                <form onSubmit={handleSendReport} className="space-y-4">
                     <div>
                         <label htmlFor="message" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
                             Issue Description
